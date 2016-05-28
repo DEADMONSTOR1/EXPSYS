@@ -4,15 +4,34 @@
 		  GitHub:https://github.com/toshko3331/expsys   
 	==================================================
 ]]--
-util.AddNetworkString( "UpdateClient" )
+
+if SERVER then
+	util.AddNetworkString( "UpdateClient" )
+	util.AddNetworkString( "XPText" )
+end
 XPSYS = {}
-XPSYS.XPTable = {1,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500}
+XPTable = {1}
+
 
  --[[---------------------------------------------------------
-   Name: XPSYS.InitializeXPTable()
+   Name: XPSYS.CreateXPGuildLines()
+   Desc: Makes the XPTable GuildLines
+-----------------------------------------------------------]]
+function XPSYS.CreateXPGuildLines()
+	XPTable = {1}
+	for i=1,99 do do
+		table.insert(XPTable, i * 100)
+	end
+end
+end
+hook.Add( "Initialize", "CreateXPGuildLines", XPSYS.CreateXPGuildLines )
+
+XPSYS.CreateXPGuildLines()
+ --[[---------------------------------------------------------
+   Name: InitializeXPTable()
    Desc: Starts to make the Table if not there.
 -----------------------------------------------------------]]
-function XPSYS.InitializeXPTable()
+function InitializeXPTable()
 	if( sql.Query( "SELECT SteamID,XP,Level FROM experience" ) == false ) then
 		sql.Query( "CREATE TABLE experience( SteamID string UNIQUE, XP int, Level int )" )
 		print( "XP table successfully initialized!" )
@@ -20,15 +39,15 @@ function XPSYS.InitializeXPTable()
 
 	print( "XP table successfully initialized!" )
 end
-hook.Add( "Initialize", "Experience Table Initialization", XPSYS.InitializeXPTable )
+hook.Add( "Initialize", "Experience Table Initialization", InitializeXPTable )
 
 --[[---------------------------------------------------------
-   Name: XPSYS.InitializePlayerInfo(player)
+   Name: InitializePlayerInfo(player)
    Desc: Checks if the XP table contains the proper columns and handles creating them.
    Also updates the client initially when the player loads.
 -----------------------------------------------------------]]
 
-function XPSYS.InitializePlayerInfo( ply )
+function InitializePlayerInfo( ply )
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
@@ -36,102 +55,114 @@ function XPSYS.InitializePlayerInfo( ply )
 	if( sql.Query( "SELECT * FROM experience WHERE SteamID = '"..steamID.."'" ) == nil ) then
 		sql.Query("INSERT INTO experience ( SteamID, XP, Level ) \
 			VALUES ( '"..steamID.."', 0, 1)" )
-	end
-	
-	XPSYS.UpdateClient(ply,tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..steamID.."'")),
+	else
+		ply:SetNWInt("XP" , tonumber(sql.QueryValue( "SELECT XP FROM experience WHERE SteamID = '"..steamID.."'" )))
+		ply:SetNWInt("Level" , tonumber(sql.QueryValue( "SELECT Level FROM experience WHERE SteamID = '"..steamID.."'" )))
+
+	end	
+	UpdateClient(ply,tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..steamID.."'")),
 		tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..steamID.."'")))
 end
-hook.Add( "PlayerInitialSpawn", "Initializing The Player Info", XPSYS.InitializePlayerInfo )
+hook.Add( "PlayerInitialSpawn", "Initializing The Player Info", InitializePlayerInfo )
 
 --[[---------------------------------------------------------
-   Name: XPSYS.AddXP(player, xp)
+   Name: AddXP(player, xp)
    Desc: Adds XP to the player.
 -----------------------------------------------------------]]
 
-function XPSYS.AddXP( ply, xp )
+function AddXP( ply, xp )
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
 	local steamID = ply:SteamID()
-	sql.Query( "UPDATE experience SET XP = XP + '"..xp.."' WHERE SteamID = '"..steamID.."'" )
-	XPSYS.UpdateThroughXP(ply,tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..steamID.."'")))
+	local realxp = tonumber(ply:GetNWInt("XP" , 0))
+	sql.Query( "UPDATE experience SET XP = '"..realxp.."' WHERE SteamID = '"..steamID.."'" )
+	local reallevel = ply:GetNWInt("Level" , 0) 	
+	ply:SetNWInt("XP", realxp + xp)
+	UpdateThroughXP(ply, tonumber(ply:GetNWInt("XP" , 0)))
+	ply:ConCommand("CheckXP" )
 end
 
+
 --[[---------------------------------------------------------
-   Name: XPSYS.SetXP(player, xp)
+   Name: SetXP(player, xp)
    Desc: Sets the XP of the player.
 -----------------------------------------------------------]]
 
-function XPSYS.SetXP( ply, xp )
+function SetXP( ply, xp )
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
+	ply:ConCommand("CheckXP" )
 	local steamID = ply:SteamID()
 	sql.Query( "UPDATE experience SET XP = '"..xp.."' WHERE SteamID = '"..steamID.."'" )
-	XPSYS.UpdateThroughXP( ply, xp )
+	ply:SetNWInt("XP", xp)
+	UpdateThroughXP( ply, xp )
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.AddLevels(player, level(s))
+   Name: AddLevels(player, level(s))
    Desc: Add the level(s) to the player.
 -----------------------------------------------------------]]
 
-function XPSYS.AddLevels( ply, levels )
+function AddLevels( ply, levels )
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
+	ply:ConCommand("CheckXP" )
 	local steamID = ply:SteamID()
-	local newLevel = tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..steamID.."'")) + levels
-	XPSYS.UpdateThroughLevel( ply, newLevel )
+	local newLevel = ply:GetNWInt("Level") + levels
+	UpdateThroughLevel( ply, newLevel )
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.SetLevel(player, level(s))
+   Name: SetLevel(player, level(s))
    Desc: Sets the level(s) to the player selected.
 -----------------------------------------------------------]]
 
-function XPSYS.SetLevel( ply, level )
+function SetLevel( ply, level )
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
-	XPSYS.UpdateThroughLevel( ply, level )
+	ply:ConCommand("CheckXP" )
+	UpdateThroughLevel( ply, level )
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.GetLevel(player)
+   Name: GetLevel(player)
    Desc: Returns the level of the player.
 -----------------------------------------------------------]]
 
-function XPSYS.GetLevel(ply)
+function GetLevel(ply)
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
-	return tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..ply:SteamID().."'"))
+	return tonumber(ply:GetNWInt("Level", 0))
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.GetXP(player)
+   Name: GetXP(player)
    Desc: Returns the XP of the player.
 -----------------------------------------------------------]]
 
-function XPSYS.GetXP(ply)
+function GetXP(ply)
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
-	return tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..ply:SteamID().."'"))
+	return tonumber(ply:GetNWInt("XP", 0))
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.isPlayerMaxLevel(player, xp)
+   Name: isPlayerMaxLevel(player, xp)
    Desc: Returns a boolean value on weather the player is the max level.
 -----------------------------------------------------------]]
 
-function XPSYS.isPlayerMaxLevel( ply )
+function isPlayerMaxLevel( ply )
 	if !(ply:IsValid() and ply:IsPlayer()) then
 		return 
 	end
-	local maxLevel = #XPSYS.XPTable
-	if tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..ply:SteamID().."'")) >= maxLevel  then
+	local maxLevel = #XPTable
+	if tonumber(GetLevel( ply )) >= maxLevel  then
 		return true
 	else
 		return false
@@ -139,81 +170,107 @@ function XPSYS.isPlayerMaxLevel( ply )
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.UpdateThroughXP(player, xp)
+   Name: UpdateThroughXP(player, xp)
    Desc: Utility function for updating the xp and taking into account any leveling up that happens in the process.
 			Not meant to be used outside of this file without good reason.
 -----------------------------------------------------------]]
 
-function XPSYS.UpdateThroughXP( ply, xp )
+function UpdateThroughXP( ply, xp )
 	local steamID = ply:SteamID()
-	if !XPSYS.isPlayerMaxLevel(ply) then
-		if xp <= XPSYS.XPTable[tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..steamID.."'")) + 1] then
+	if !isPlayerMaxLevel(ply) then
+		if xp <= XPTable[GetLevel(ply) + 1] then
 			-- We do this to make sure it does not send data that will register the 
 			-- player as having more XP than the current level's max on the client side.
-			XPSYS.UpdateClient(ply,xp,tonumber(sql.QueryValue( "SELECT Level FROM experience WHERE SteamID = '"..steamID.."'" )))
+			UpdateClient(ply , xp , tonumber(GetLevel(ply)))
 		end
 		
-		while xp > XPSYS.XPTable[tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..steamID.."'")) + 1] do
+		while xp >= XPTable[tonumber(ply:GetNWInt("Level", 0) + 1)] do
 			sql.Query( "UPDATE experience SET Level = Level + 1 WHERE SteamID = '"..steamID.."'" )
-			xp = xp - XPSYS.XPTable[tonumber(sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..steamID.."'"))]
-			sql.Query( "UPDATE experience SET XP = '"..xp.."' WHERE SteamID = '"..steamID.."'")
-			hook.Call("PlayerLevelUp",GAMEMODE,ply)
-			XPSYS.UpdateClient(ply,xp,tonumber(sql.QueryValue( "SELECT Level FROM experience WHERE SteamID = '"..steamID.."'" )))
-			if XPSYS.isPlayerMaxLevel(ply) and xp > XPSYS.XPTable[#XPSYS.XPTable] then
+			xp = xp - XPTable[1]
+			sql.Query( "UPDATE experience SET XP = 0 WHERE SteamID = '"..steamID.."'")
+			ply:SetNWInt("XP" , 0)
+			ply:SetNWInt("Level", GetLevel(ply) + 1)
+			umsg.Start("LevelUP", ply)
+			umsg.End()
+			UpdateClient(ply , xp , GetLevel( ply ) )
+			
+			if isPlayerMaxLevel(ply) and xp > XPTable[#XPTable] then
 				-- We check here in case the initial XP that was passed overflows the table but when we player received it
 				-- they were not max level (e.x: Level 14 and receive enough xp to push them 3 levels over, which overflows table.)
-				sql.Query( "UPDATE experience SET XP = '"..XPSYS.XPTable[#XPSYS.XPTable].."' WHERE SteamID = '"..steamID.."'")
-				XPSYS.UpdateClient(ply,XPSYS.XPTable[#XPSYS.XPTable],#XPSYS.XPTable)
+				sql.Query( "UPDATE experience SET XP = '"..XPTable[#XPTable].."' WHERE SteamID = '"..steamID.."'")
+				UpdateClient(ply , XPTable[#XPTable] , #XPTable)
+				ply:SetNWInt("XP", XPTable[#XPTable] )
+				ply:SetNWInt("Level", #XPTable)
 				break
 			end
+		ply:SendLua("notification.AddLegacy('You leveled up!', NOTIFY_GENERIC, 5);")
 		end
 	else
-		local maxXP = XPSYS.XPTable[#XPSYS.XPTable]
-		if tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..steamID.."'")) > maxXP then
+		local maxXP = XPTable[#XPTable]
+		if tonumber(GetXP( ply ) ) > maxXP then
 			--If max level and xp that was passed was over the max amaount
 			sql.Query("UPDATE experience SET XP = '"..maxXP.."' WHERE SteamID = '"..steamID.."'")
-			XPSYS.UpdateClient(ply,maxXP,#XPSYS.XPTable)
+			UpdateClient(ply , maxXP , #XPTable )
+			ply:SetNWInt("XP" , maxXP)
+			ply:SetNWInt("Level", #XPTable)
 		else
 			--If max level and xp passed was below or equal to the last levels xp max.
-			XPSYS.UpdateClient(ply,xp,#XPSYS.XPTable)
+			UpdateClient(ply , xp , #XPTable)
 		end
 	end
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.UpdateThroughLevel(player, xp)
+   Name: UpdateThroughLevel(player, xp)
    Desc: Utility function for updating level.
 			Not meant to be used outside of this file without good reason.
 -----------------------------------------------------------]]
 
-function XPSYS.UpdateThroughLevel( ply, level )
+function UpdateThroughLevel( ply, level )
 	local steamID = ply:SteamID()
-	local maxLevel = #XPSYS.XPTable
+	local maxLevel = #XPTable
 	if level >= maxLevel then
 		sql.Query("UPDATE experience SET Level = '"..maxLevel.."' WHERE SteamID = '"..steamID.."'")	
-		XPSYS.UpdateClient(ply,tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..steamID.."'")),maxLevel)
+		ply:SetNWInt("Level", maxLevel)
+		UpdateClient(ply, GetXP(ply) ,maxLevel)
 		ply:SendLua("notification.AddLegacy('Your level is set to "..maxLevel.."!', NOTIFY_GENERIC, 5);")
 	else
 		sql.Query("UPDATE experience SET Level = '"..level.."' WHERE SteamID = '"..steamID.."'")
-		XPSYS.UpdateClient(ply,tonumber(sql.QueryValue("SELECT XP FROM experience WHERE SteamID = '"..steamID.."'")),level)
+		ply:SetNWInt("Level", level)
+		UpdateClient(ply, GetXP(ply) ,level)
 		ply:SendLua("notification.AddLegacy('Your level is set to "..level.."!', NOTIFY_GENERIC, 5);")
 	end
 end
 
 --[[---------------------------------------------------------
-   Name: XPSYS.UpdateClient(player, xp, level)
+   Name: UpdateClient(player, xp, level)
    Desc: Sends all player data to the client.
 -----------------------------------------------------------]]
-
-function XPSYS.UpdateClient( ply, xp, level )
-	net.Start( "UpdateClient" )
-	net.WriteInt(xp,32) -- client xp
-	net.WriteInt(level,32) -- client level
-	if XPSYS.isPlayerMaxLevel(ply) then --XP requirement for next level 
-		net.WriteInt(XPSYS.XPTable[#XPSYS.XPTable] ,32) 
-	else
-		net.WriteInt(XPSYS.XPTable[tonumber(
-			sql.QueryValue("SELECT Level FROM experience WHERE SteamID = '"..ply:SteamID().."'")) + 1] ,32)
-	end
-	net.Send(ply)
+function GetMaxLevel()
+	return tonumber(XPTable[#XPTable])
 end
+
+function NextLevelXP( ply )
+	local level = ply:GetNWInt("Level", 0)
+	if level == #XPTable then	
+		return XPTable[#XPTable]
+	else
+		return XPTable[level + 1]
+	end
+end
+
+function MyLevelXP( ply )
+	local level = ply:GetNWInt("Level", 0)
+	return XPTable[level]
+end
+
+function UpdateClient( ply, xp, level )
+	//
+end
+
+function AddXPOnKill(victim, inflictor, attacker )
+	if ( victim == attacker ) then return end
+	AddXP(attacker , 10)
+end
+
+hook.Add( "PlayerDeath", "playerDeathTest", AddXPOnKill )
